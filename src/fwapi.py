@@ -112,7 +112,20 @@ def op_status(_):
 
 
 def op_config(_):
-    return redact(cfg())
+    # Файл конфига хранит только то, что отличается от умолчаний, поэтому
+    # сырой файл вводит в заблуждение: спросив порог, агент получал null и
+    # честно отвечал "не задан", хотя демон работает со значением 5.
+    # Отдаём то, с чем демон РЕАЛЬНО работает, и помечаем, откуда значение.
+    sys.path.insert(0, str(BASE))
+    import importlib
+    fw = importlib.import_module("flightwatch")
+    file_cfg = cfg()
+    merged = dict(fw.DEFAULTS)
+    merged.update(file_cfg)
+    return {"effective": redact(merged),
+            "overridden_in_file": sorted(k for k in file_cfg if k != "flights"),
+            "note": "effective - то, с чем демон работает сейчас; "
+                    "ключи вне overridden_in_file взяты из умолчаний кода"}
 
 
 def op_log(params):
