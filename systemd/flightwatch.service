@@ -1,0 +1,32 @@
+[Unit]
+Description=flightwatch - слежение за рейсом через FR24 с СМС в MQTT
+After=network-online.target mosquitto.service mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Демон больше не root: он не должен уметь переписывать собственный код.
+# Это же разделение готовит почву для агента, который будет ходить под
+# другим пользователем и без права трогать боевой каталог.
+User=flightwatch
+Group=flightwatch
+WorkingDirectory=/opt/flightwatch
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=FLIGHTWATCH_STATE=/opt/flightwatch/run/state.json
+ExecStart=/opt/flightwatch/venv/bin/python /opt/flightwatch/flightwatch.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# минимальные ограничения: демону нужен только свой каталог
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# писать демон может ТОЛЬКО в свой рантайм-подкаталог
+ReadWritePaths=/opt/flightwatch/run
+
+[Install]
+WantedBy=multi-user.target

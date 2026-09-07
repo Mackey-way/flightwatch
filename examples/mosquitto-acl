@@ -1,0 +1,20 @@
+# /etc/mosquitto/acl на ДОМАШНЕМ брокере.
+#
+# ВАЖНО: как только в mosquitto.conf появляется acl_file, запрещено всё,
+# что здесь не разрешено явно. И `#` НЕ покрывает $SYS — его надо
+# разрешать отдельной строкой, иначе у существующих клиентов молча
+# пропадут системные топики.
+
+user homeassistant
+topic readwrite #
+topic read $SYS/#
+
+user zigbee2mqtt
+topic readwrite #
+topic read $SYS/#
+
+# Учётка облачного моста: только отправка СМС и приём подтверждений.
+# Больше в дом из облака не попадает ничего.
+user fwbridge
+topic write openstick/CHANGE_ME/sms/send
+topic read openstick/+/sms/sent

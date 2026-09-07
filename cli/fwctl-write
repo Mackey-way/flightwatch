@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""fwctl-write - управление списком отслеживаемых рейсов.
+
+Добавление и снятие рейсов идут БЕЗ подтверждения - так решил владелец.
+Настройки демона сюда не входят: они в fwctl-config, и та спрашивает.
+Причина разделения - "set --key notify --value false" молча выключил бы
+уведомления сразу по всем рейсам, а это не управление рейсами.
+
+Примеры:
+  fwctl-write add-flight --flight XX1234 --airport AAA --date 2026-01-01 \
+      --direction departure --title "Город А - Город Б"
+  fwctl-write remove-flight --flight XX1234 --date 2026-01-01
+"""
+import argparse
+import json
+import sys
+import urllib.request
+
+URL = "http://127.0.0.1:8787/"
+
+
+def call(op, params):
+    token = open("/etc/fwapi.token", encoding="utf-8").read().strip()
+    body = json.dumps({"op": op, "params": params}).encode("utf-8")
+    req = urllib.request.Request(URL, data=body, headers={
+        "Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        return json.load(e)
+
+
+def main():
+    p = argparse.ArgumentParser(prog="fwctl-write", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="op", required=True)
+    af = sub.add_parser("add-flight", help="добавить рейс в слежение")
+    af.add_argument("--flight", required=True)
+    af.add_argument("--airport", required=True, help="IATA аэропорта, чьё табло слушать")
+    af.add_argument("--date", required=True, help="ГГГГ-ММ-ДД, местная дата аэропорта")
+    af.add_argument("--direction", required=True, choices=["departure", "arrival"])
+    af.add_argument("--title")
+    af.add_argument("--to", help="IATA аэропорта назначения, если известен")
+    af.add_argument("--extra-sms-to", nargs="*", help="кому ещё слать СМС")
+    rf = sub.add_parser("remove-flight", help="снять рейс со слежения")
+    rf.add_argument("--flight", required=True)
+    rf.add_argument("--date")
+    a = p.parse_args()
+    if a.op == "add-flight":
+        spec = {"flight": a.flight, "airport": a.airport, "date": a.date,
+                "direction": a.direction}
+        if a.title:
+            spec["title"] = a.title
+        if a.to:
+            spec["to"] = a.to
+        if a.extra_sms_to:
+            spec["extra_sms_to"] = a.extra_sms_to
+        params = {"flight": spec}
+    elif a.op == "remove-flight":
+        params = {"flight": a.flight, "date": a.date}
+    else:
+        raise SystemExit("настройки демона живут в fwctl-config")
+    out = call(a.op, params)
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    sys.exit(0 if out.get("ok") else 1)
+
+
+if __name__ == "__main__":
+    main()

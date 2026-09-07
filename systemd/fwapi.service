@@ -1,0 +1,29 @@
+[Unit]
+Description=fwapi - узкий контракт агента к демону рейсов
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flightwatch
+Group=flightwatch
+SupplementaryGroups=fwapi
+WorkingDirectory=/opt/flightwatch
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/flightwatch/venv/bin/python /opt/fwapi/fwapi.py
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# правит только config.json демона и ничего больше
+ReadWritePaths=/opt/flightwatch
+# слушает только петлю - наружу и в туннель не торчит
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

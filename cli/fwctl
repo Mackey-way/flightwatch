@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""fwctl - ЧТЕНИЕ состояния демона рейсов. Ничего не меняет.
+
+Именно эту команду разрешено запускать без подтверждения, поэтому она
+физически не умеет вызывать операции изменения: список READ жёстко зашит.
+Всё, что меняет состояние, живёт в отдельной команде fwctl-write и
+каждый раз спрашивает кнопкой.
+
+Примеры:
+  fwctl status
+  fwctl log --lines 80
+  fwctl sources --hours 24
+  fwctl sql "SELECT flight_no, airport, delay_min FROM punctuality ORDER BY id DESC LIMIT 20"
+  fwctl board --airport TIV --source montenegro --leg DEP
+  fwctl config
+"""
+import argparse
+import json
+import sys
+import urllib.request
+
+READ = ("status", "config", "log", "sources", "sql", "board")
+URL = "http://127.0.0.1:8787/"
+
+
+def call(op, params):
+    if op not in READ:
+        sys.exit(f"fwctl умеет только читать: {', '.join(READ)}. "
+                 f"Для изменений есть fwctl-write (спросит подтверждение).")
+    token = open("/etc/fwapi.token", encoding="utf-8").read().strip()
+    body = json.dumps({"op": op, "params": params}).encode("utf-8")
+    req = urllib.request.Request(URL, data=body, headers={
+        "Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        return json.load(e)
+
+
+def main():
+    p = argparse.ArgumentParser(prog="fwctl", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="op", required=True)
+    sub.add_parser("status", help="рейсы и их текущее состояние")
+    sub.add_parser("config", help="конфиг демона, секреты скрыты")
+    lg = sub.add_parser("log", help="хвост журнала демона")
+    lg.add_argument("--lines", type=int, default=60)
+    sr = sub.add_parser("sources", help="здоровье источников: сколько опросов и сколько удачных")
+    sr.add_argument("--hours", type=int, default=24)
+    sq = sub.add_parser("sql", help="SELECT по базе демона, только чтение")
+    sq.add_argument("query")
+    bd = sub.add_parser("board", help="живой опрос табло аэропорта тем же кодом, что у демона")
+    bd.add_argument("--airport", required=True)
+    bd.add_argument("--source", required=True,
+                    choices=["montenegro", "beg", "tav", "zvartnots"])
+    bd.add_argument("--leg", default="DEP", choices=["DEP", "ARR"])
+    bd.add_argument("--date")
+    a = p.parse_args()
+    params = {k: v for k, v in vars(a).items() if k != "op" and v is not None}
+    print(json.dumps(call(a.op, params), ensure_ascii=False, indent=1))
+
+
+if __name__ == "__main__":
+    main()

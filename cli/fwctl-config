@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""fwctl-config - правка НАСТРОЕК демона рейсов. Всегда спрашивает.
+
+Управление самими рейсами живёт в fwctl-write и подтверждений не требует.
+Здесь остались настройки, которые меняют поведение всей системы: выключить
+notify - значит замолчать по всем рейсам сразу, и такое молча происходить
+не должно.
+
+  fwctl-config set --key tg_shift_min --value 10
+"""
+import argparse
+import json
+import sys
+import urllib.request
+
+URL = "http://127.0.0.1:8787/"
+
+
+def main():
+    p = argparse.ArgumentParser(prog="fwctl-config", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="op", required=True)
+    st = sub.add_parser("set", help="поменять один разрешённый параметр")
+    st.add_argument("--key", required=True)
+    st.add_argument("--value", required=True)
+    a = p.parse_args()
+    token = open("/etc/fwapi.token", encoding="utf-8").read().strip()
+    body = json.dumps({"op": "set", "params": {"key": a.key, "value": a.value}}).encode("utf-8")
+    req = urllib.request.Request(URL, data=body, headers={
+        "Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            out = json.load(r)
+    except urllib.error.HTTPError as e:
+        out = json.load(e)
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    sys.exit(0 if out.get("ok") else 1)
+
+
+if __name__ == "__main__":
+    main()

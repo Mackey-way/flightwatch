@@ -1,0 +1,22 @@
+# секреты — их в репозитории быть не должно
+.mysql_pass
+.mqtt_pass
+.tg_token
+.tg_token_*
+*.token
+fwapi.token
+config.json
+*.pem
+*.key
+wg*.conf
+
+# рантайм
+run/
+state.json
+*.log
+*.log.*
+
+# питон
+venv/
+__pycache__/
+*.pyc
