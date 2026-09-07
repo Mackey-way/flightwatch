@@ -33,6 +33,8 @@
 ## Из чего состоит
 
 ```
+install.sh               установщик на чистый Debian, идемпотентный
+AGENTS.md                развёртывание агентом: шаги, проверки, типовые поломки
 src/flightwatch.py       демон
 src/fwapi.py             узкий HTTP-контракт на 127.0.0.1:8787 (для агента)
 cli/fwctl                чтение состояния  (безопасно, можно без подтверждения)
@@ -75,7 +77,56 @@ config.example.json      шаблон конфига
    написать в отправку СМС и прочитать подтверждение. Всё остальное из
    облака в дом не попадает, даже если демон это опубликует.
 
-## Установка
+## Быстрая установка
+
+Проверено на чистом Debian 12. Одна команда ставит всё: пакеты, базу со
+схемой, брокер с учёткой, окружение python, конфиг, службы — и на каждом шаге
+проверяет результат, останавливаясь на первом же несошедшемся.
+
+```bash
+git clone <URL> flightwatch && cd flightwatch
+sudo FW_TG_TOKEN='токен от @BotFather' FW_TG_CHAT=123456789 \
+     FW_SMS_TO='+70000000000' ./install.sh --yes --with-fwapi
+```
+
+Без секретов тоже поднимется — молча следить и писать в базу он будет и так,
+каналы дописываются потом одной правкой конфига:
+
+```bash
+sudo ./install.sh --yes
+```
+
+Скрипт идемпотентный: повторный запуск не перетирает ни секреты, ни конфиг.
+Флаги: `--with-fwapi`, `--skip-db`, `--skip-broker`, `--skip-packages`, `--yes`.
+
+Дальше — проверка, что оно действительно живое, а не просто «запустилось»:
+
+```bash
+journalctl -u flightwatch -n 50 --no-pager | grep "MQTT: подключён"
+```
+
+Эта строка и есть доказательство. `systemctl is-active` его не даёт: paho
+отдаёт отказ аутентификации асинхронно, и при неверном пароле к брокеру юнит
+будет `active` с мёртвым каналом.
+
+Разворачиваете агентом? Тогда ему нужен [AGENTS.md](AGENTS.md) — там
+последовательность с проверкой после каждого шага и таблица типовых поломок.
+
+## Ручная установка
+
+Если хочется понимать, что происходит, или ставить не на Debian.
+
+### 0. Что нужно на сервере
+
+Debian 12 / Ubuntu 22.04 и новее, 1 ГБ памяти хватает.
+
+```bash
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip tzdata \
+     mariadb-server mariadb-client mosquitto mosquitto-clients
+```
+
+`tzdata` не роскошь: всё время в системе считается через `zoneinfo` на момент
+события, а не по словарю смещений — без базы часовых поясов расчёты поедут.
 
 ### 1. База
 
@@ -117,6 +168,7 @@ sudo chown flightwatch:flightwatch /opt/flightwatch/run
 требует права на **каталог**, а не на файл.
 
 ```bash
+# в примере flights пустой — рейсы добавляются потом, см. шаг 5b
 sudo cp config.example.json /opt/flightwatch/run/config.json
 sudo ln -s run/config.json /opt/flightwatch/config.json
 sudo chown flightwatch:flightwatch /opt/flightwatch/run/config.json
@@ -136,6 +188,41 @@ sudo chown root:flightwatch /opt/flightwatch/.*_pass /opt/flightwatch/.tg_token
 В конфиге хранятся только **пути** к этим файлам. В репозитории их нет и быть
 не должно — см. `.gitignore`.
 
+### 3b. Брокер MQTT
+
+```bash
+# без -c mosquitto_passwd не создаёт файл, а падает на отсутствующем
+sudo touch /etc/mosquitto/passwd
+sudo mosquitto_passwd -b /etc/mosquitto/passwd flightwatch 'ПАРОЛЬ_MQTT'
+sudo chown root:mosquitto /etc/mosquitto/passwd && sudo chmod 640 /etc/mosquitto/passwd
+sudo tee /etc/mosquitto/conf.d/flightwatch.conf >/dev/null <<'EOF'
+listener 1883 127.0.0.1
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+EOF
+sudo systemctl restart mosquitto && systemctl is-active mosquitto
+```
+
+`persistence` и `persistence_location` сюда добавлять **не надо**: в стоковом
+`/etc/mosquitto/mosquitto.conf` Debian они уже есть, а повторное значение
+mosquitto считает ошибкой конфигурации и отказывается стартовать целиком.
+
+Права на `passwd` обязательны: файл читает процесс mosquitto, и при `600
+root:root` брокер молча не пустит никого.
+
+### 3c. Бот Telegram
+
+Создать бота у [@BotFather](https://t.me/BotFather), затем написать ему любое
+сообщение и забрать chat_id:
+
+```bash
+curl -s "https://api.telegram.org/bot<ТОКЕН>/getUpdates" \
+  | grep -o '"id":[0-9-]*' | head -1
+```
+
+Пустой ответ при рабочем токене означает, что `getUpdates` уже держит другой
+процесс или у бота стоит вебхук — поллер может быть только один.
+
 ### 4. Окружение и запуск
 
 ```bash
@@ -148,7 +235,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now flightwatch
 Проверка, что он действительно поднялся, а не просто «active»:
 
 ```bash
-journalctl -u flightwatch -n 40 --no-pager | grep -E "MQTT|рейс"
+sleep 5 && journalctl -u flightwatch -n 40 --no-pager | grep -E "MQTT|рейс"
 ```
 
 В логе должна быть строка `MQTT: подключён`. Это не украшение: paho отдаёт
@@ -190,6 +277,39 @@ journalctl -u flightwatch -n 40 --no-pager | grep -E "MQTT|рейс"
 Демон перечитывает конфиг сам по `mtime`, цикл — `poll_seconds` (90 с по
 умолчанию). Перезапуск после правки не нужен.
 
+### 5b. Первый рейс и проверка живьём
+
+Рейсы правятся и с командной строки, и прямо в `config.json` — путь внутрь
+один и тот же:
+
+```bash
+sudo -u flightwatch /opt/flightwatch/venv/bin/python \
+     /opt/flightwatch/flightwatch.py --add 3F151 2026-09-09 EVN
+sudo -u flightwatch /opt/flightwatch/venv/bin/python \
+     /opt/flightwatch/flightwatch.py --list
+```
+
+`EVN` для проверки удобен тем, что у Звартноца открытый JSON без ключа —
+самый дешёвый способ доказать, что сетевой путь работает. Через полторы
+минуты в журнале должно появиться `конфиг перечитан, рейсов: 1`, а в базе —
+удачный опрос:
+
+```bash
+sudo mysql -N -B flightwatch -e \
+  "SELECT source, ok, rows_returned FROM source_polls ORDER BY id DESC LIMIT 3;"
+```
+
+Ответ демона «не найден (1 проверок подряд, порог 3)» — нормальный: рейса за
+двое суток на табло ещё нет, порог в три проверки ровно для этого.
+
+### 5c. Сенсоры в Home Assistant
+
+Если в `discovery_prefix` указан ваш префикс discovery (по умолчанию
+`homeassistant`) и HA слушает тот же брокер, сенсоры появятся сами — по
+одному устройству на рейс. Отдельной настройки в HA не требуется.
+
+Не нужны — уберите `discovery_prefix` из конфига, публикация прекратится.
+
 ### 6. Мост СМС (если нужны СМС)
 
 `modem/sms_mqtt_bridge.py` кладётся **на модем** и настраивается переменными
@@ -217,6 +337,15 @@ journalctl -u flightwatch -n 40 --no-pager | grep -E "MQTT|рейс"
   в репозиторий не попадают.
 * `mosquitto-bridge.conf` — мост, ставится на **облачный** брокер.
 * `mosquitto-acl` — ACL домашнего брокера.
+
+На облаке наружу должны смотреть ровно два порта — ssh и WireGuard:
+
+```bash
+sudo ufw allow 22/tcp && sudo ufw allow 51820/udp && sudo ufw enable
+```
+
+Ни 1883, ни 8787 наружу не открываются никогда: брокер слушает петлю, `fwapi`
+дополнительно ограничен `IPAddressAllow=localhost` в юните.
 
 Про ACL важное: как только в `mosquitto.conf` появляется `acl_file`,
 запрещено всё, что не разрешено явно, — а `#` **не** покрывает `$SYS`. Если
@@ -253,11 +382,28 @@ journalctl -u flightwatch -n 40 --no-pager | grep -E "MQTT|рейс"
 sudo mkdir -p /opt/fwapi && sudo cp src/fwapi.py /opt/fwapi/
 sudo cp cli/fwctl cli/fwctl-write cli/fwctl-config /usr/local/bin/
 sudo chmod 755 /usr/local/bin/fwctl*
-openssl rand -hex 24 | sudo tee /etc/fwapi.token >/dev/null
 sudo groupadd -f fwapi
+
+# токен, которым fwctl авторизуется в fwapi
+openssl rand -hex 24 | sudo tee /etc/fwapi.token >/dev/null
 sudo chown root:fwapi /etc/fwapi.token && sudo chmod 640 /etc/fwapi.token
+
+# пароль ЧИТАЮЩЕГО пользователя базы из шага 1 — путь зашит в fwapi.py
+printf '%s' 'ПАРОЛЬ2' | sudo tee /etc/fwapi.dbpass >/dev/null
+sudo chown root:flightwatch /etc/fwapi.dbpass && sudo chmod 640 /etc/fwapi.dbpass
+
 sudo cp systemd/fwapi.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now fwapi
+```
+
+Проверка, что контракт живой и что читающая учётка действительно только
+читает:
+
+```bash
+sleep 3                            # службе нужен момент, чтобы занять порт
+fwctl status                       # ожидается: ok true и список рейсов
+fwctl sources --hours 1            # ходит в базу под fwread
+fwctl sql "DELETE FROM flights"    # ожидается отказ: только SELECT и WITH
 ```
 
 Пользователя агента добавьте в группу `fwapi` — только это и даёт ему доступ

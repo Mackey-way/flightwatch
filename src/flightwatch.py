@@ -49,7 +49,9 @@ BASE = Path(__file__).resolve().parent
 CONFIG_PATH = BASE / "config.json"
 # Рантайм живёт отдельно от кода: каталог с кодом демону закрыт на запись,
 # чтобы он не мог переписать сам себя, а писать состояние ему всё равно надо.
-STATE_PATH = Path(os.environ.get("FLIGHTWATCH_STATE") or (BASE / "state.json"))
+# Плюс атомарная подмена файла (os.replace) требует права на КАТАЛОГ, а не
+# на файл, поэтому положить state.json рядом с кодом нельзя в принципе.
+STATE_PATH = Path(os.environ.get("FLIGHTWATCH_STATE") or (BASE / "run" / "state.json"))
 
 TOPIC_PREFIX = "flightwatch"
 AVAILABILITY_TOPIC = "flightwatch/status"
@@ -2927,7 +2929,12 @@ def run_daemon() -> int:
                 now_ = {slug_of(f): title_of(f) for f in cfg["flights"]}
                 added = [now_[k] for k in now_.keys() - was.keys()]
                 gone = [was[k] for k in was.keys() - now_.keys()]
-                if (added or gone) and cfg.get("notify", True):
+                # Telegram может быть намеренно не настроен - тогда это не
+                # отказ канала, а выбранная конфигурация, и ошибкой в журнале
+                # она быть не должна: на каждой правке списка получался ERROR.
+                # Проверять надо именно токен, а не channels: в DEFAULTS
+                # telegram в списке каналов есть всегда.
+                if (added or gone) and cfg.get("notify", True) and bus._token:
                     parts = []
                     if added:
                         parts.append("добавлено: " + ", ".join(sorted(added)))

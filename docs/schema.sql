@@ -423,7 +423,6 @@ CREATE TABLE `wave_stats` (
 /*!50001 SET character_set_results     = utf8mb3 */;
 /*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_board_disagreement` AS select `f`.`flight_no` AS `рейс`,`f`.`flight_date` AS `дата`,max(case when `o`.`jurisdiction` = 'origin' then `o`.`status_class` end) AS `у_вылета`,max(case when `o`.`jurisdiction` = 'destination' then `o`.`status_class` end) AS `у_прилёта`,max(case when `o`.`jurisdiction` = 'aggregator' then `o`.`status_class` end) AS `агрегатор`,max(`o`.`last_seen_at`) AS `проверено` from (`observations` `o` join `flights` `f` on(`f`.`id` = `o`.`flight_id`)) where `o`.`last_seen_at` > current_timestamp() - interval 1 hour group by `f`.`id` having count(distinct `o`.`status_class`) > 1 */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -436,7 +435,6 @@ CREATE TABLE `wave_stats` (
 /*!50001 SET character_set_results     = utf8mb3 */;
 /*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_flight_timeline` AS select `f`.`flight_no` AS `рейс`,`f`.`flight_date` AS `дата`,`o`.`source` AS `источник`,`o`.`jurisdiction` AS `юрисдикция`,`o`.`leg` AS `плечо`,`o`.`status_class` AS `класс`,`o`.`status_raw` AS `статус`,cast(`o`.`scheduled_local` as time) AS `план`,cast(`o`.`estimated_local` as time) AS `оценка`,timestampdiff(MINUTE,`o`.`scheduled_local`,`o`.`estimated_local`) AS `задержка_мин`,`o`.`gate` AS `гейт`,`o`.`checkin_desks` AS `стойки`,`o`.`first_seen_at` AS `впервые`,`o`.`last_seen_at` AS `последний_раз`,`o`.`seen_count` AS `раз` from (`observations` `o` join `flights` `f` on(`f`.`id` = `o`.`flight_id`)) order by `f`.`flight_date`,`f`.`flight_no`,`o`.`first_seen_at` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -449,7 +447,6 @@ CREATE TABLE `wave_stats` (
 /*!50001 SET character_set_results     = utf8mb3 */;
 /*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_msk_stress` AS select `punctuality`.`flight_date` AS `дата`,count(0) AS `рейсов`,round(avg(`punctuality`.`delay_min`),0) AS `средняя`,max(`punctuality`.`delay_min`) AS `макс`,sum(`punctuality`.`delay_min` >= 120) AS `тяжёлых`,case when avg(`punctuality`.`delay_min`) >= 90 then 'СБОЙ' when avg(`punctuality`.`delay_min`) >= 45 then 'напряжённо' else 'норма' end AS `оценка` from `punctuality` where `punctuality`.`flight_no` in ('XX1234','YY5678') and `punctuality`.`delay_min` is not null group by `punctuality`.`flight_date` order by `punctuality`.`flight_date` desc */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -462,7 +459,6 @@ CREATE TABLE `wave_stats` (
 /*!50001 SET character_set_results     = utf8mb3 */;
 /*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_prediction_accuracy` AS select `predictions`.`flight_no` AS `рейс`,`predictions`.`flight_date` AS `дата`,round(`predictions`.`horizon_min` / 60,1) AS `горизонт_ч`,`predictions`.`predicted_delay_min` AS `прогноз`,`predictions`.`board_delay_min` AS `табло`,`predictions`.`actual_delay_min` AS `факт`,`predictions`.`error_min` AS `ошибка`,`predictions`.`method` AS `метод`,`predictions`.`made_at` AS `сделан` from `predictions` order by `predictions`.`flight_date`,`predictions`.`horizon_min` desc */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -475,7 +471,6 @@ CREATE TABLE `wave_stats` (
 /*!50001 SET character_set_results     = utf8mb3 */;
 /*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_punctuality` AS select `punctuality`.`flight_no` AS `рейс`,`punctuality`.`airport` AS `порт`,count(0) AS `наблюдений`,sum(`punctuality`.`delay_min` is not null) AS `с_фактом`,sum(`punctuality`.`delay_min` <= 15) AS `вовремя`,round(avg(`punctuality`.`delay_min`),0) AS `средняя_задержка`,max(`punctuality`.`delay_min`) AS `худшая`,min(`punctuality`.`delay_min`) AS `лучшая`,group_concat(concat(date_format(`punctuality`.`flight_date`,'%d.%m'),':',ifnull(concat('+',`punctuality`.`delay_min`,'м'),'?')) order by `punctuality`.`flight_date` ASC separator '  ') AS `по_дням` from `punctuality` group by `punctuality`.`flight_no`,`punctuality`.`airport` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -488,7 +483,6 @@ CREATE TABLE `wave_stats` (
 /*!50001 SET character_set_results     = utf8mb3 */;
 /*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_source_health` AS select `source_polls`.`source` AS `источник`,`source_polls`.`airport` AS `аэропорт`,count(0) AS `опросов`,sum(`source_polls`.`ok` = 0) AS `отказов`,round(100 * sum(`source_polls`.`ok` = 0) / count(0),1) AS `процент_отказов`,round(avg(nullif(`source_polls`.`duration_ms`,0)),0) AS `средн_мс`,max(`source_polls`.`duration_ms`) AS `макс_мс`,max(case when `source_polls`.`ok` = 1 then `source_polls`.`polled_at` end) AS `последний_успех`,substring_index(group_concat(`source_polls`.`error` order by `source_polls`.`id` DESC separator ' | '),' | ',1) AS `последняя_ошибка` from `source_polls` group by `source_polls`.`source`,`source_polls`.`airport` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -501,7 +495,6 @@ CREATE TABLE `wave_stats` (
 /*!50001 SET character_set_results     = utf8mb3 */;
 /*!50001 SET collation_connection      = utf8mb3_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_warning_time` AS select `f`.`flight_no` AS `рейс`,`f`.`flight_date` AS `дата`,`f`.`airport` AS `аэропорт`,`o`.`source` AS `источник`,`o`.`status_raw` AS `статус`,cast(`o`.`scheduled_local` as time) AS `план`,cast(`o`.`estimated_local` as time) AS `оценка`,timestampdiff(MINUTE,`o`.`scheduled_local`,`o`.`estimated_local`) AS `сдвиг_мин`,`o`.`first_seen_at` AS `впервые_msk`,timestampdiff(MINUTE,`o`.`first_seen_at` + interval ifnull(`ar`.`utc_offset_min`,180) - 180 minute,`o`.`scheduled_local`) AS `фора_мин` from ((`observations` `o` join `flights` `f` on(`f`.`id` = `o`.`flight_id`)) left join `airport_rules` `ar` on(`ar`.`airport` = `f`.`airport`)) where `o`.`estimated_local` is not null and `o`.`scheduled_local` is not null and `o`.`estimated_local` <> `o`.`scheduled_local` order by `o`.`first_seen_at` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;

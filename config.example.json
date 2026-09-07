@@ -3,7 +3,6 @@
   "db_user": "flightwatch",
   "db_name": "flightwatch",
   "db_pass_file": "/opt/flightwatch/.mysql_pass",
-
   "mqtt_host": "127.0.0.1",
   "mqtt_port": 1883,
   "mqtt_user": "flightwatch",
@@ -11,47 +10,21 @@
   "mqtt_prefix": "flightwatch",
   "mqtt_client_id": "flightwatch",
   "discovery_prefix": "homeassistant",
-
-  "channels": ["telegram", "sms"],
+  "channels": [
+    "telegram",
+    "sms"
+  ],
   "notify": true,
-
   "telegram_chat_id": 0,
   "telegram_token_file": "/opt/flightwatch/.tg_token",
-
   "sms_to": "+70000000000",
   "sms_topic": "openstick/CHANGE_ME/sms/send",
   "ack_topic": "openstick/+/sms/sent",
   "sms_ttl_s": 1800,
   "modem_hint": "модем",
-
   "poll_seconds": 90,
   "log_file": "/opt/flightwatch/run/flightwatch.log",
-
-  "briefings": [
-    {"name": "утро", "at": "06:00", "airport": "AAA"}
-  ],
-
+  "briefings": [],
   "watch_numbers": [],
-
-  "flights": [
-    {
-      "flight": "XX1234",
-      "date": "2026-01-01",
-      "airport": "AAA",
-      "direction": "departure",
-      "to": "BBB",
-      "title": "Город А - Город Б",
-      "owner": "self",
-      "notify": true
-    },
-    {
-      "flight": "YY5678",
-      "date": "2026-01-01",
-      "airport": "AAA",
-      "direction": "arrival",
-      "title": "Встреча друзей",
-      "owner": "other",
-      "notify": true
-    }
-  ]
+  "flights": []
 }
