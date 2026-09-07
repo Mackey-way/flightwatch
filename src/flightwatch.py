@@ -589,6 +589,12 @@ class Store:
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(3))
                ON DUPLICATE KEY UPDATE
                    actual_local=COALESCE(VALUES(actual_local), actual_local),
+                   -- scheduled_local обязан обновляться вместе с delay_min:
+                   -- задержка считается от ТЕКУЩЕГО расписания источника, и
+                   -- если рейс перевыставили, старое время в строке начинает
+                   -- противоречить задержке. Так у SU1266 за 02.09 стояло
+                   -- 13:25 -> 13:28 при delay_min=14 (считали от 13:14).
+                   scheduled_local=COALESCE(VALUES(scheduled_local), scheduled_local),
                    delay_min=COALESCE(VALUES(delay_min), delay_min),
                    status_class=VALUES(status_class),
                    aircraft_reg=COALESCE(VALUES(aircraft_reg), aircraft_reg),
