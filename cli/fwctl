@@ -12,6 +12,7 @@
   fwctl sources --hours 24
   fwctl sql "SELECT flight_no, airport, delay_min FROM punctuality ORDER BY id DESC LIMIT 20"
   fwctl board --airport TIV --source montenegro --leg DEP
+  fwctl history --flight XX1234
   fwctl config
 """
 import argparse
@@ -19,7 +20,7 @@ import json
 import sys
 import urllib.request
 
-READ = ("status", "config", "log", "sources", "sql", "board")
+READ = ("status", "config", "log", "sources", "sql", "board", "history")
 URL = "http://127.0.0.1:8787/"
 
 
@@ -56,6 +57,9 @@ def main():
                     choices=["montenegro", "beg", "tav", "zvartnots"])
     bd.add_argument("--leg", default="DEP", choices=["DEP", "ARR"])
     bd.add_argument("--date")
+    hs = sub.add_parser("history", help="пунктуальность рейса: считает служба, а не модель")
+    hs.add_argument("--flight", required=True)
+    hs.add_argument("--date", help="какой вылет оцениваем; по умолчанию ближайший будущий")
     a = p.parse_args()
     params = {k: v for k, v in vars(a).items() if k != "op" and v is not None}
     print(json.dumps(call(a.op, params), ensure_ascii=False, indent=1))

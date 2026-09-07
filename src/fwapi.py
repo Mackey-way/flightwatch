@@ -145,6 +145,114 @@ def op_sources(params):
         "GROUP BY source ORDER BY polls DESC", (hours,))}
 
 
+def op_history(params):
+    """Пунктуальность рейса, посчитанная ЗДЕСЬ, а не моделью.
+
+    Раньше агент тянул строки через sql и считал сам - и ошибался
+    предсказуемо: усреднял вместе утренний и дневной рейсы под одним
+    номером, ставил среднее за месяц рядом со списком за неделю и молча
+    пересказывал строки, где разница времён не сходится с задержкой.
+    Арифметику надо делать кодом, а не напоминанием в промпте.
+    """
+    flight = (params.get("flight") or "").upper().replace(" ", "")
+    if not flight:
+        raise ValueError("нужен --flight")
+    rows = db("SELECT flight_date, scheduled_local, actual_local, delay_min, "
+              "       status_class, aircraft_reg "
+              "FROM punctuality WHERE flight_no=%s ORDER BY flight_date DESC",
+              (flight,))
+    if not rows:
+        return {"flight": flight, "n_rows": 0,
+                "note": "в базе нет ни одной строки по этому номеру"}
+
+    done = [r for r in rows if r["actual_local"] and r["delay_min"] is not None]
+
+    def stats(items):
+        d = sorted(x["delay_min"] for x in items)
+        n = len(d)
+        if not n:
+            return None
+        mid = n // 2
+        median = d[mid] if n % 2 else round((d[mid - 1] + d[mid]) / 2, 1)
+        return {"n": n,
+                "avg": round(sum(d) / n, 1),
+                "median": median,
+                "best": d[0], "worst": d[-1],
+                "ge30": sum(1 for x in d if x >= 30),
+                "ge60": sum(1 for x in d if x >= 60)}
+
+    # Один номер может летать по разному расписанию в разные дни. Усреднять
+    # их вместе - значит отвечать про другой рейс.
+    groups = {}
+    for r in done:
+        h = int(str(r["scheduled_local"])[11:13])
+        groups.setdefault(h, []).append(r)
+
+    # какой рейс оцениваем: заданная дата, иначе ближайший будущий
+    target_date = params.get("date")
+    target = None
+    if target_date:
+        target = next((r for r in rows if str(r["flight_date"]) == target_date), None)
+    else:
+        pend = [r for r in rows if not r["actual_local"]]
+        target = pend[-1] if pend else None
+    target_hour = int(str(target["scheduled_local"])[11:13]) if target else None
+
+    group_out = []
+    for h in sorted(groups):
+        st = stats(groups[h])
+        st["hour"] = h
+        st["schedule"] = sorted({str(x["scheduled_local"])[11:16] for x in groups[h]})
+        st["is_target_group"] = (h == target_hour)
+        group_out.append(st)
+
+    recent = []
+    for r in done[:7]:
+        sched, act = str(r["scheduled_local"]), str(r["actual_local"])
+        calc = None
+        try:
+            from datetime import datetime as _dt
+            f = "%Y-%m-%d %H:%M:%S"
+            calc = round((_dt.strptime(act[:19], f) - _dt.strptime(sched[:19], f)).total_seconds() / 60)
+        except Exception:
+            pass
+        recent.append({"date": str(r["flight_date"]), "scheduled": sched[11:16],
+                       "actual": act[11:16], "delay_min": r["delay_min"],
+                       "consistent": calc is None or abs(calc - r["delay_min"]) <= 1,
+                       "reg": r["aircraft_reg"]})
+
+    overall = stats(done)
+    recent_st = stats(done[:7])
+    tgt = next((g for g in group_out if g["is_target_group"]), None)
+    bad = [r for r in recent if not r["consistent"]]
+
+    note = ["Цифру для ответа бери из target_group, если он есть: это те же "
+            "дни, что и оцениваемый рейс, а не все подряд."]
+    if len(group_out) > 1:
+        note.append(f"Номер {flight} летает по {len(group_out)} разным расписаниям - "
+                    "общее среднее по ним смешано и для прогноза не годится.")
+    if overall and recent_st and abs(overall["avg"] - recent_st["avg"]) >= 10:
+        note.append(f"Среднее за всё окно ({overall['avg']}) и за последние 7 дней "
+                    f"({recent_st['avg']}) сильно расходятся - называй оба и скажи, "
+                    "что тянет вверх.")
+    if overall and overall["avg"] - overall["median"] >= 10:
+        note.append(f"Среднее ({overall['avg']}) заметно выше медианы "
+                    f"({overall['median']}): его тянут выбросы. Полезнее счёт: "
+                    f"{overall['ge30']} из {overall['n']} вылетов с задержкой 30+ мин.")
+    if bad:
+        note.append("В recent есть строки, где разница времён не сходится с "
+                    "задержкой (consistent=false) - скажи об этом, не пересказывай молча.")
+
+    return {"flight": flight,
+            "target": ({"date": str(target["flight_date"]),
+                        "scheduled": str(target["scheduled_local"])[11:16],
+                        "status": target["status_class"]} if target else None),
+            "n_rows": len(rows), "n_with_actual": len(done),
+            "overall": overall, "last7": recent_st,
+            "schedule_groups": group_out, "target_group": tgt,
+            "recent": recent, "note": note}
+
+
 SELECT_ONLY = re.compile(r"^\s*(select|with)\b", re.I)
 
 
@@ -249,7 +357,8 @@ def op_set(params):
 
 
 READ_OPS = {"status": op_status, "config": op_config, "log": op_log,
-            "sources": op_sources, "sql": op_sql, "board": op_board}
+            "sources": op_sources, "sql": op_sql, "board": op_board,
+            "history": op_history}
 WRITE_OPS = {"add-flight": op_add_flight, "remove-flight": op_remove_flight,
              "set": op_set}
 OPS = {**READ_OPS, **WRITE_OPS}
