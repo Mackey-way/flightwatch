@@ -10,7 +10,7 @@ config.json
 *.key
 wg*.conf
 # ...кроме заготовок без ключей
-!examples/wg0-*.conf
+!extras/split-deployment/wg0-*.conf
 
 # рантайм
 run/

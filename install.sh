@@ -12,6 +12,8 @@
 # Флаги:
 #   --yes            не задавать вопросов (значения берутся из переменных)
 #   --with-fwapi     поставить ещё и контракт для агента (fwapi + fwctl)
+#   --with-mock-sms  поставить заглушку SMS-шлюза: канал СМС проверяется
+#                    целиком, но никуда ничего не уходит (нет модема - не беда)
 #   --skip-db        база уже готова, не трогать
 #   --skip-broker    mosquitto уже настроен, не трогать
 #   --skip-packages  ничего не ставить через apt
@@ -19,10 +21,11 @@ set -euo pipefail
 
 BASE=/opt/flightwatch
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ASSUME_YES=0; WITH_FWAPI=0; SKIP_DB=0; SKIP_BROKER=0; SKIP_PKGS=0
+ASSUME_YES=0; WITH_FWAPI=0; WITH_MOCK=0; SKIP_DB=0; SKIP_BROKER=0; SKIP_PKGS=0
 for a in "$@"; do case "$a" in
   --yes|-y) ASSUME_YES=1 ;;
   --with-fwapi) WITH_FWAPI=1 ;;
+  --with-mock-sms) WITH_MOCK=1 ;;
   --skip-db) SKIP_DB=1 ;;
   --skip-broker) SKIP_BROKER=1 ;;
   --skip-packages) SKIP_PKGS=1 ;;
@@ -68,6 +71,8 @@ id -u flightwatch >/dev/null 2>&1 || useradd -r -M -s /usr/sbin/nologin flightwa
 install -d -o root -g root -m 755 "$BASE"
 install -d -o flightwatch -g flightwatch -m 750 "$BASE/run"
 install -o root -g root -m 755 "$SRC/src/flightwatch.py" "$BASE/flightwatch.py"
+install -d -o root -g root -m 755 "$BASE/tools"
+install -o root -g root -m 755 "$SRC/tools/mock_sms_gw.py" "$BASE/tools/mock_sms_gw.py"
 ok "$BASE (код root:root, запись только в $BASE/run)"
 
 # --- 3. окружение python ---------------------------------------------------
@@ -140,7 +145,9 @@ say "6/9 секреты и конфиг"
 ask FW_TG_TOKEN "Токен Telegram-бота (от @BotFather, пусто = без Telegram)" ""
 ask FW_TG_CHAT  "chat_id, куда писать (число)" "0"
 ask FW_SMS_TO   "Номер для СМС в формате +7... (пусто = без СМС)" ""
-ask FW_SMS_TOPIC "Топик отправки СМС вашего моста" "openstick/CHANGE_ME/sms/send"
+DEF_TOPIC="smsgw/CHANGE_ME/sms/send"
+[ "$WITH_MOCK" = 1 ] && DEF_TOPIC="smsgw/mock/sms/send"
+ask FW_SMS_TOPIC "Топик отправки СМС вашего шлюза" "$DEF_TOPIC"
 
 [ -n "$FW_TG_TOKEN" ] && printf '%s' "$FW_TG_TOKEN" > "$BASE/.tg_token"
 touch "$BASE/.tg_token"
@@ -150,6 +157,9 @@ chmod 640 "$BASE"/.mysql_pass "$BASE"/.mqtt_pass "$BASE"/.tg_token
 CFG="$BASE/run/config.json"
 if [ ! -s "$CFG" ]; then
   CH='["telegram","sms"]'
+  # С заглушкой номер не нужен: она всё равно никуда не звонит, зато канал
+  # проверяется целиком - очередь, подтверждение, срок годности.
+  [ -z "$FW_SMS_TO" ] && [ "$WITH_MOCK" = 1 ] && FW_SMS_TO="+70000000000"
   [ -z "$FW_SMS_TO" ] && CH='["telegram"]'
   [ -z "$FW_TG_TOKEN" ] && CH='["sms"]'
   [ -z "$FW_TG_TOKEN$FW_SMS_TO" ] && CH='[]'
@@ -220,8 +230,14 @@ if [ "$WITH_FWAPI" = 1 ]; then
   chown root:fwapi /etc/fwapi.token && chmod 640 /etc/fwapi.token
   install -m 644 "$SRC/systemd/fwapi.service" /etc/systemd/system/
 fi
+if [ "$WITH_MOCK" = 1 ]; then
+  install -m 644 "$SRC/systemd/mock-sms-gw.service" /etc/systemd/system/
+fi
 if [ "$HAVE_SYSTEMD" = 1 ]; then
   systemctl daemon-reload
+  # заглушка поднимается ДО демона: иначе первая же команда уйдёт в пустоту
+  # и через sms_ack_timeout_s демон честно доложит, что моста нет на месте
+  [ "$WITH_MOCK" = 1 ] && systemctl enable --now mock-sms-gw
   systemctl enable --now flightwatch
   [ "$WITH_FWAPI" = 1 ] && systemctl enable --now fwapi
   sleep 8

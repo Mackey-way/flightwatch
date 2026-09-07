@@ -16,5 +16,5 @@ topic read $SYS/#
 # Учётка облачного моста: только отправка СМС и приём подтверждений.
 # Больше в дом из облака не попадает ничего.
 user fwbridge
-topic write openstick/CHANGE_ME/sms/send
-topic read openstick/+/sms/sent
+topic write smsgw/CHANGE_ME/sms/send
+topic read smsgw/+/sms/sent

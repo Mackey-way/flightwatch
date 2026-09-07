@@ -1,0 +1,25 @@
+[Unit]
+Description=заглушка SMS-шлюза для flightwatch (ничего никуда не шлёт)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flightwatch
+Group=flightwatch
+Environment=PYTHONUNBUFFERED=1
+Environment=MQTT_USER=flightwatch
+Environment=MQTT_PASS_FILE=/opt/flightwatch/.mqtt_pass
+ExecStart=/opt/flightwatch/venv/bin/python /opt/flightwatch/tools/mock_sms_gw.py \
+          --id mock --out /opt/flightwatch/run/sms-mock.jsonl
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/flightwatch/run
+
+[Install]
+WantedBy=multi-user.target

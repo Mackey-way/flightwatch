@@ -30,8 +30,13 @@ ssh к серверу. Человеку достаточно `README.md`.
 |---|---|---|
 | `FW_TG_TOKEN` | токен бота от [@BotFather](https://t.me/BotFather) | ставь без Telegram |
 | `FW_TG_CHAT` | числовой chat_id получателя | `0` |
-| `FW_SMS_TO` | номер `+7…` для СМС | ставь без СМС |
-| `FW_SMS_TOPIC` | топик отправки его SMS-моста | оставь заглушку |
+| `FW_SMS_TO` | номер `+7…` для СМС | ставь с заглушкой (см. ниже) |
+| `FW_SMS_TOPIC` | топик его настоящего SMS-шлюза | `smsgw/mock/sms/send` |
+
+**Про СМС.** Настоящий шлюз — это чей-то модем с симкой, и его почти
+наверняка нет. Ставь с `--with-mock-sms`: заглушка выполняет тот же контракт,
+канал СМС при этом живой и проверяемый целиком, но никуда ничего не уходит.
+Не пытайся настроить настоящую отправку, если человек про неё не просил.
 
 chat_id узнаётся так: человек пишет боту любое сообщение, затем
 
@@ -47,12 +52,12 @@ curl -s "https://api.telegram.org/bot<ТОКЕН>/getUpdates" | grep -o '"id":[0
 ```bash
 git clone <URL репозитория> /tmp/flightwatch-oss
 cd /tmp/flightwatch-oss
-sudo FW_TG_TOKEN="…" FW_TG_CHAT=… FW_SMS_TO="+7…" ./install.sh --yes --with-fwapi
+sudo FW_TG_TOKEN="…" FW_TG_CHAT=… ./install.sh --yes --with-mock-sms --with-fwapi
 ```
 
 Скрипт идемпотентный: повторный запуск не перетирает уже созданные секреты и
-конфиг. Флаги: `--with-fwapi` (контракт для агента), `--skip-db`,
-`--skip-broker`, `--skip-packages`.
+конфиг. Флаги: `--with-mock-sms` (заглушка шлюза), `--with-fwapi` (контракт
+для агента), `--skip-db`, `--skip-broker`, `--skip-packages`.
 
 Он проходит 9 шагов и **останавливается на первом же несошедшемся**. Не
 продолжай вручную мимо остановки — сообщение всегда называет причину.
@@ -94,6 +99,17 @@ journalctl -u flightwatch -n 10 --no-pager
 «не найден (1 проверок подряд, порог 3)» — **нормальный**: рейс за двое суток
 ещё не на табло, а порог в 3 проверки как раз для этого и стоит.
 
+Канал СМС, если ставили с `--with-mock-sms` — проверяется целиком, без симки:
+
+```bash
+mosquitto_pub -h 127.0.0.1 -u flightwatch \
+  -P "$(sudo cat /opt/flightwatch/.mqtt_pass)" -t smsgw/mock/sms/send \
+  -m '{"to":"+70000000000","text":"проверка","req_id":"fw-test-1"}'
+sleep 2 && sudo cat /opt/flightwatch/run/sms-mock.jsonl
+# ожидается строка JSON с текстом "проверка"
+journalctl -u flightwatch --since "-1 min" --no-pager | grep "мост подтвердил"
+```
+
 Если ставили с `--with-fwapi`:
 
 ```bash
@@ -113,7 +129,8 @@ fwctl sql "DELETE FROM flights"   # ожидается отказ: "разреш
 | `БРОКЕР НЕ ПУСТИЛ: Not authorized` | пароль в `/etc/mosquitto/passwd` и в `.mqtt_pass` разошлись | `mosquitto_passwd -b /etc/mosquitto/passwd flightwatch "$(cat /opt/flightwatch/.mqtt_pass)"` и перезапустить брокер |
 | `PermissionError: /opt/flightwatch/state.tmp` | старая версия писала состояние рядом с кодом | обновить `flightwatch.py`: состояние живёт в `run/` |
 | юнит `active`, но сообщений нет | демон не подключился к брокеру | искать в журнале `MQTT НЕ ПОДКЛЮЧЁН` |
-| `токен Telegram не задан` | Telegram не настроен | это не ошибка, если `channels` не содержит `telegram` |
+| `токен Telegram не задан` | Telegram не настроен | это не ошибка, если токена нет намеренно |
+| `СМС НЕ ПОДТВЕРЖДАЮТСЯ` | шлюза нет на месте | `systemctl status mock-sms-gw`; заглушку надо поднимать до демона |
 | `mysql: Access denied` при заливке схемы | заливаете не под root@localhost | `sudo mysql flightwatch < docs/schema.sql`; `DEFINER` из дампа уже вырезаны |
 
 ## 5. Разнесённая установка (облако + дом)
@@ -123,10 +140,10 @@ fwctl sql "DELETE FROM flights"   # ожидается отказ: "разреш
 
 1. фаервол на облаке (открыт только ssh и `51820/udp`);
 2. WireGuard, `AllowedIPs` по одному `/32` в каждую сторону
-   (`examples/wg0-*.conf`), проверка — `ping` до адреса в туннеле;
+   (`extras/split-deployment/wg0-*.conf`), проверка — `ping` до адреса в туннеле;
 3. перенос демона и базы, проверка — совпадение числа строк по каждой таблице;
-4. мост MQTT (`examples/mosquitto-bridge.conf`) и ACL на домашнем брокере
-   (`examples/mosquitto-acl`), проверка — команда на СМС, отправленная при
+4. мост MQTT (`extras/split-deployment/mosquitto-bridge.conf`) и ACL на домашнем брокере
+   (`extras/split-deployment/mosquitto-acl`), проверка — команда на СМС, отправленная при
    выключенном туннеле, должна дойти после включения;
 5. параллельный прогон: облачный экземпляр с **другими** `mqtt_prefix` и
    `mqtt_client_id` и `notify: false`, сутки рядом с домашним;

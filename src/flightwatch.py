@@ -241,7 +241,10 @@ DEFAULTS = {
     "landing_wait_hours": 14,      # сколько держим вылетевший рейс ради факта посадки
     "airport_alert_within_h": 18,  # ближе этого к рейсу загрузка аэропорта важна
     "sms_to": "",                    # +7XXXXXXXXXX, куда слать СМС
-    "sms_topic": "openstick/CHANGE_ME/sms/send",   # id вашего SMS-моста
+    # Топики SMS-шлюза. По умолчанию - заглушка из tools/mock_sms_gw.py:
+    # она реализует тот же контракт и позволяет проверить весь канал СМС,
+    # не имея ни модема, ни симки. Настоящий шлюз просто меняет id.
+    "sms_topic": "smsgw/mock/sms/send",
     "mqtt_host": "127.0.0.1",
     "mqtt_port": 1883,
     "mqtt_user": "flightwatch",
@@ -256,8 +259,8 @@ DEFAULTS = {
     "channels": ["telegram", "sms"],
     "telegram_chat_id": 0,           # id вашего чата с ботом
     "telegram_token_file": str(BASE / ".tg_token"),
-    "ack_topic": "openstick/+/sms/sent",
-    "modem_hint": "модем",           # как назвать модем в тексте тревоги
+    "ack_topic": "smsgw/+/sms/sent",
+    "modem_hint": "шлюз СМС",        # как назвать шлюз в тексте тревоги
     "sms_ttl_s": 1800,   # позже этого СМС уже не новость, мост её выбросит
     "log_file": str(BASE / "flightwatch.log"),
     "log_max_bytes": 2000000,
