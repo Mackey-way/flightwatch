@@ -69,7 +69,10 @@ def db(sql: str, args=()):
         cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:
-            cur.execute(sql, args)
+            # Пустой кортеж аргументов - это НЕ "без аргументов": pymysql всё
+            # равно прогоняет строку через %-форматирование, и любой запрос с
+            # процентом (DATE_FORMAT, LIKE) падает на "not enough arguments".
+            cur.execute(sql, args) if args else cur.execute(sql)
             rows = cur.fetchall()
     finally:
         conn.close()
