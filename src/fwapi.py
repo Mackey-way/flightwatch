@@ -138,11 +138,31 @@ def op_log(params):
 
 
 def op_sources(params):
+    """Здоровье источников - вместе с ответом на вопрос «а было что опрашивать».
+
+    Пустой список опросов сам по себе НЕ значит поломку: когда все рейсы
+    отлетали, демон нечего опрашивать и он молчит по делу. Агент, увидев
+    голые нули, доложил «источник завис больше суток», хотя всё работало.
+    Поэтому контекст отдаём здесь, а не надеемся, что модель догадается.
+    """
     hours = min(int(params.get("hours", 24)), 24 * 30)
-    return {"since_hours": hours, "rows": db(
-        "SELECT source, COUNT(*) AS polls, SUM(ok) AS ok, MAX(polled_at) AS last "
-        "FROM source_polls WHERE polled_at > NOW() - INTERVAL %s HOUR "
-        "GROUP BY source ORDER BY polls DESC", (hours,))}
+    rows = db("SELECT source, COUNT(*) AS polls, SUM(ok) AS ok, "
+              "       MAX(polled_at) AS last "
+              "FROM source_polls WHERE polled_at > NOW() - INTERVAL %s HOUR "
+              "GROUP BY source ORDER BY polls DESC", (hours,))
+    active = [f for f in op_status(None)["flights"] if f["tracked"] and not f["done"]]
+    out = {"since_hours": hours, "rows": rows,
+           "active_flights": len(active),
+           "active_titles": [f["title"] for f in active]}
+    if not active:
+        out["note"] = ("Активных рейсов нет - все отлетели. Демон в этом "
+                       "состоянии НИЧЕГО не опрашивает, поэтому отсутствие "
+                       "свежих опросов здесь ожидаемо и поломкой не является. "
+                       "Не докладывай это как отказ источника.")
+    elif not rows:
+        out["note"] = ("Рейсы в слежении есть, а опросов за окно нет - вот это "
+                       "уже похоже на отказ: смотри fwctl log.")
+    return out
 
 
 def op_history(params):
